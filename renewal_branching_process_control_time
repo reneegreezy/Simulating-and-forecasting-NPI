@@ -1,0 +1,111 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import scipy.stats as stats
+from scipy.stats import gamma
+
+
+
+def simulate_infections_time(T, initial_infected, R_t,repro_mean, repro_std, omega,generation_time_mean, generation_time_std,lockdown_initiated):
+    """
+    Simulates the number of infections over time.
+
+    Parameters:
+    - T: Total number of time steps.
+    - initial_infected: Initial number of infected individuals.
+    - R_t: Function to return the reproduction number at time t.
+    - omega: Array representing the serial interval distribution.
+    - lockdown_initiated: the number of new infections when lockdown is initiated 
+
+    Returns:
+    - infected: Array of the number of infected individuals at each time step.
+    """
+    infected = np.zeros(T)
+    infected[0] = initial_infected
+    prev_rt = None 
+    rt = np.zeros(T)
+    rt[0] = 3.5
+    lockdown= False
+    social_distancing = False 
+    lockdown_start = 0 
+    social_distance_start = 0
+
+    for t in range(1, T):
+        rt[t],lockdown, social_distancing,lockdown_time,social_distance_time = R_t(t,infected[t-1],repro_mean, repro_std, lockdown, social_distancing,lockdown_initiated,lockdown_start,social_distance_start)
+        summation = 0
+        for s in range(t):
+            summation += infected[s] * rt[s] * omega(s,t,generation_time_mean, generation_time_std)
+        infected[t] = np.random.poisson(summation)
+        
+    return infected,rt
+
+
+def R_t(t,num_infected, repro_mean, repro_std,lockdown,social_distancing,lockdown_initiated,lockdown_start,social_distance_start):
+    """
+    Simulates the reproduction number
+
+    Parameters:
+    - t: current time step
+    - num_infected: current number of new infections.
+    - repro_mean: reproduction rate mean.
+    - repro_std: reproduction rate standard deviation.
+    - lockdown: Boolean to determine if population is in lockdown
+    - social_distancing: Boolean to determine if population is in social distancing 
+    - lockdown_initiated: number of new infections when lockdown is initiated 
+    - lockdown_start: the initial time the lockdown was initiated 
+    - social_distance_start: the intial time social distancing was initiated 
+
+
+    Returns:
+    - rt: reproduction rate at time step t 
+    """
+
+
+    # Truncated Normal Distribution, truncated at 0
+    a, b = (0 - repro_mean) / repro_std, (repro_mean+1.5 - repro_mean) / repro_std  # Truncate at 0 to infinity
+
+# Generate the truncated normal distribution
+    trunc_norm_dist = stats.truncnorm(a, b, loc=repro_mean, scale=repro_std)
+    rt = trunc_norm_dist.rvs()
+
+    if num_infected > lockdown_initiated and not (social_distancing or lockdown):
+        # Start reduction process
+        reduced_rt = rt * 0.2
+        lockdown = True
+        lockdown_time = t
+        return reduced_rt, lockdown, social_distancing,lockdown_time,social_distance_time
+    elif lockdown and lockdown_time+20 >= t:
+        # Maintain reduced level until num_infected is less than 1000
+        reduced_rt = rt * 0.2
+        return reduced_rt, lockdown, social_distancing,lockdown_time,social_distance_time
+
+    elif (lockdown and lockdown_time+20<t):
+        # Adjust to 50% reduction 
+        reduced_rt = rt * 0.5
+        lockdown = False
+        social_distancing = True 
+        social_distance_time = t
+        return reduced_rt, lockdown, social_distancing, lockdown_time, social_distance_time
+
+    
+    elif social_distancing and social_distance_time+10>=t :
+        # Adjust to 50% reduction 
+        reduced_rt = rt * 0.5
+
+        social_distancing = True 
+        return reduced_rt, lockdown, social_distancing,lockdown_time,social_distance_time
+
+    elif social_distancing and social_distance_time+10<t:
+        social_distancing = False
+        return rt, False, False,lockdown_time,social_distance_time
+    else:
+        return rt, False, False,lockdown_time,social_distance_time
+
+
+def omega(s,t ,generation_time_mean, generation_time_std):
+    beta = generation_time_mean/(generation_time_std**2)
+    alpha = generation_time_mean*beta
+    summation_gen = 0
+    for i in range(t+1):
+        summation_gen += stats.gamma.pdf(i, a=alpha, scale=1/beta)
+    p_gen = stats.gamma.pdf(t-s , a=alpha, scale=1/beta)
+    return p_gen/summation_gen
