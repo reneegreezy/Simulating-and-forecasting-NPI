@@ -1,0 +1,80 @@
+import numpy as np
+import matplotlib.pyplot as plt
+import scipy.stats as stats
+from scipy.stats import gamma
+
+def simulate_infections(T, initial_infected, R_t,repro_mean, repro_std, omega,generation_time_mean, generation_time_std,lockdown_initiated,lockdown_lifted,social_lifted):
+    """
+    Simulates the number of infections over time.
+
+    Parameters:
+    - T: Total number of time steps.
+    - initial_infected: Initial number of infected individuals.
+    - R_t: Function to return the reproduction number at time t.
+    - omega: Array representing the serial interval distribution.
+    - generation_time_mean: mean for the generation time distribution 
+    - generation_time_std: standard deviation for the generation time distribution
+    - lockdown_initiated: the number of new infections when lockdown is intiated 
+    - lockdown_lifted: the number of new infections when lockdown is lifted and moved to social distancing
+    - social_lifted: the number of new infections when social distancing is lifted
+
+    Returns:
+    - infected: Array of the number of infected individuals at each time step.
+    """
+    infected = np.zeros(T)
+    infected[0] = initial_infected
+    prev_rt = None 
+    rt = np.zeros(T)
+    rt[0] = 3.5
+    lockdown= False
+    social_distancing = False 
+
+    for t in range(1, T):
+        rt[t],lockdown, social_distancing = R_t(infected[t-1],repro_mean, repro_std, lockdown, social_distancing,lockdown_initiated,lockdown_lifted,social_lifted)
+        summation = 0
+        for s in range(t):
+            summation += infected[s] * rt[s] * omega(s,t,generation_time_mean, generation_time_std)
+        infected[t] = np.random.poisson(summation)
+        
+    return infected,rt
+
+
+def R_t(num_infected, repro_mean, repro_std,lockdown=False, social_distancing= False,lockdown_initiated=4000,lockdown_lifted=1000,social_lifted=2000):
+
+
+    # Truncated Normal Distribution, truncated at 0
+    a, b = (0 - repro_mean) / repro_std, (repro_mean+1.5 - repro_mean) / repro_std  # Truncate at 0 to infinity
+
+# Generate the truncated normal distribution
+    trunc_norm_dist = stats.truncnorm(a, b, loc= repro_mean, scale=repro_std)
+    rt = trunc_norm_dist.rvs()
+
+    if num_infected > lockdown_initiated:
+        # Start reduction process
+        reduced_rt = rt * 0.2
+        lockdown = True
+        return reduced_rt, lockdown, social_distancing
+    elif lockdown and num_infected>lockdown_lifted:
+        # Maintain reduced level until num_infected is less than 1000
+        reduced_rt = rt * 0.2
+        return reduced_rt, lockdown, social_distancing
+    elif (lockdown and num_infected<lockdown_lifted) or social_distancing:
+        # Adjust to 50% reduction 
+        reduced_rt = rt * 0.5
+        lockdown = False
+        social_distancing = True 
+        return reduced_rt, lockdown, social_distancing
+    elif social_distancing and num_infected>social_lifted:
+        return rt, False, False
+    else:
+        return rt, False, False
+
+
+def omega(s,t ,generation_time_mean, generation_time_std):
+    beta = generation_time_mean/(generation_time_std**2)
+    alpha = generation_time_mean*beta
+    summation_gen = 0
+    for i in range(t+1):
+        summation_gen += stats.gamma.pdf(i, a=alpha, scale=1/beta)
+    p_gen = stats.gamma.pdf(t-s , a=alpha, scale=1/beta)
+    return p_gen/summation_gen

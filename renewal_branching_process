@@ -1,0 +1,54 @@
+import numpy as np
+import matplotlib.pyplot as plt
+
+def simulate_epidemic(R, initial_infected, max_generations, generation_time_mean, generation_time_sd):
+    # Initialize parameters
+    current_generation = initial_infected
+    epidemic_curve = [initial_infected]
+    generation_times = [0]  # Start with generation 0
+
+    for gen in range(max_generations):
+        next_generation = 0
+        next_generation_times = []
+        for _ in range(current_generation):
+            # Determine the number of secondary cases for each infected individual
+            secondary_cases = np.random.poisson(R)
+            next_generation += secondary_cases
+            
+            # Determine the generation times for the secondary cases
+            if secondary_cases > 0:
+                next_generation_times.extend(np.random.normal(generation_time_mean, generation_time_sd, secondary_cases))
+        
+        epidemic_curve.append(next_generation)
+        generation_times.append(np.mean(next_generation_times) if next_generation_times else 0)
+        current_generation = next_generation
+        
+        # If the epidemic goes extinct, stop the simulation
+        if current_generation == 0:
+            break
+    
+    return epidemic_curve, generation_times
+
+# Parameters
+R = 1.5  # Reproduction number
+initial_infected = 10  # Initial number of infected individuals
+max_generations = 20  # Maximum number of generations to simulate
+generation_time_mean = 7  # Mean of generation time (in days)
+generation_time_sd = 2  # Standard deviation of generation time (in days)
+
+# Run simulation
+epidemic_curve, generation_times = simulate_epidemic(R, initial_infected, max_generations, generation_time_mean, generation_time_sd)
+
+# Plot the results
+plt.figure(figsize=(10, 6))
+plt.subplot(2, 1, 1)
+plt.plot(epidemic_curve, marker='o')
+plt.xlabel('Generation_times')
+plt.ylabel('Number of Infected Individuals')
+plt.title('Epidemic Simulation Using Renewal Branching Process')
+plt.grid(True)
+
+
+
+plt.tight_layout()
+plt.show()
